@@ -1,4 +1,6 @@
 const Photo = require('../models/photo.model');
+const Voter = require('../models/Voter.model');
+const requestIp = require('request-ip');
 
 /****** SUBMIT PHOTO ********/
 
@@ -28,7 +30,7 @@ exports.add = async (req, res) => {
           throw new Error('Invalid title');
         }
         if(!emailPattern.test(email)){
-          throw new Error('Invalid email');
+          throw new Error('Invalid title');
         }
 
 
@@ -58,17 +60,35 @@ exports.loadAll = async (req, res) => {
 /****** VOTE FOR PHOTO ********/
 
 exports.vote = async (req, res) => {
-
   try {
+    const userIp = requestIp.getClientIp(req);
+    const findUser = await Voter.findOne({ user: userIp });
     const photoToUpdate = await Photo.findOne({ _id: req.params.id });
-    if(!photoToUpdate) res.status(404).json({ message: 'Not found' });
-    else {
-      photoToUpdate.votes++;
-      photoToUpdate.save();
-      res.send({ message: 'OK' });
+
+    if (findUser) {
+      const findVote = findUser.votes.includes(photoToUpdate._id);
+      if (findVote) {
+        res.status(500).json({ message: 'You cannot vote twice' });
+      } else if (!findVote) {
+        await Voter.findOneAndUpdate(
+          { user: userIp },
+          { $push: { votes: photoToUpdate._id } },
+          () => {
+            photoToUpdate.votes++;
+            photoToUpdate.save();
+            res.send({ message: 'OK' });
+          }
+        );
+      }
+    } else if (!findUser) {
+      const newUser = new Voter({
+        user: userIp,
+        $push: { votes: photoToUpdate._id },
+      });
+      await newUser.save();
     }
-  } catch(err) {
+    if (!photoToUpdate) res.status(404).json({ message: 'Not found' });
+  } catch (err) {
     res.status(500).json(err);
   }
-
 };
